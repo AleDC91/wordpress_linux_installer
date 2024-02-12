@@ -115,78 +115,86 @@ EOF
         echo "Ottieni le chiavi di sicurezza di WordPress..."
         wp_keys=$(curl -s https://api.wordpress.org/secret-key/1.1/salt/)
 
-        # Nome del file da modificare
-        file_path="/var/www/$database_name/wp-config.php"
+# Nome del file da modificare
+file_path="/var/www/$database_name/wp-config.php"
 
-        # Array contenente i nomi delle variabili da eliminare
-        variables=('DB_PASSWORD' 'DB_USER' 'DB_NAME' 'AUTH_KEY' 'SECURE_AUTH_KEY' 'LOGGED_IN_KEY' 'NONCE_KEY' 'AUTH_SALT' 'SECURE_AUTH_SALT' 'LOGGED_IN_SALT' 'NONCE_SALT')
+# Array contenente i nomi delle variabili da eliminare
+variables=('DB_PASSWORD' 'DB_USER' 'DB_NAME' 'AUTH_KEY' 'SECURE_AUTH_KEY' 'LOGGED_IN_KEY' 'NONCE_KEY' 'AUTH_SALT' 'SECURE_AUTH_SALT' 'LOGGED_IN_SALT' 'NONCE_SALT' )
 
-        # Elimina le righe corrispondenti a ciascuna variabile
-        for var in "${variables[@]}"; do
-            sed -i "/define( '$var',/d" "$file_path"
-            echo "Riga contenente '$var' eliminata."
-        done
+# Elimina le righe corrispondenti a ciascuna variabile
+for var in "${variables[@]}"; do
+    sed -i "/define( '$var',/d" "$file_path"
+    echo "Riga contenente '$var' eliminata."
+done
 
-        # Aggiungi la definizione per il nome del database
-        sudo sed -i "23s/^/define('DB_NAME', '$database_name' );\n/" "$file_path"
-        echo "Definizione del nome del database aggiunta al file."
+# Aggiungi la definizione per il nome del database
+sudo sed -i "23s/^/define('DB_NAME', '$database_name' );\n/" "$file_path"
+echo "Definizione del nome del database aggiunta al file."
 
-        # Aggiungi la definizione per l'utente del database
-        sudo sed -i "26s/^/define('DB_USER', '$wp_username' );\n/" "$file_path"
-        echo "Definizione per l'utente del database aggiunta al file."
+# Aggiungi la definizione per l'utente del database
+sudo sed -i "26s/^/define('DB_USER', '$wp_username' );\n/" "$file_path"
+echo "Definizione per l'utente del database aggiunta al file."
 
-        # Aggiungi la definizione per la password del database
-        sudo sed -i "29s/^/define('DB_PASSWORD', '$wp_password' );\n/" "$file_path"
-        echo "Definizione per la password del database aggiunta al file."
+# Aggiungi la definizione per la password del database
+sudo sed -i "29s/^/define('DB_PASSWORD', '$wp_password' );\n/" "$file_path"
+echo "Definizione per la password del database aggiunta al file."
 
-        # Aggiungi le chiavi di sicurezza di WordPress
 
-        sudo sed -i "51s/^/'$wp_keys'\n/" "$file_path"
-        echo "Chiavi di sicurezza di WordPress aggiunte al file."
+# Salva i valori di wp_keys in un file temporaneo
+echo "$wp_keys" > temp_wp_keys.txt
 
-        # Aggiungi la definizione FS METHOD
-        echo "define('FS_METHOD', 'direct');" >>"$file_path"
-        echo "Definizione per fs method aggiunta al file."
-        echo
+# Inserisci i valori di wp_keys al file alla linea 51
+sudo sed -i "51r temp_wp_keys.txt" "$file_path"
 
-        # Percorso dei file di configurazione dei siti abilitati
-        sites_available_dir="/etc/apache2/sites-available"
-        sites_enabled_dir="/etc/apache2/sites-enabled"
+# Rimuovi il file temporaneo
+rm temp_wp_keys.txt
 
-        # Verifica se il percorso dei siti abilitati esiste
-        if [ ! -d "$sites_enabled_dir" ]; then
-            echo "Directory dei siti abilitati non trovata: $sites_enabled_dir"
-            exit 1
-        fi
+echo "Chiavi di sicurezza di WordPress aggiunte al file."
 
-        # Itera su tutti i file nella directory dei siti abilitati
-        for site_config in "$sites_enabled_dir"/*; do
-            # Estrai il nome del file (senza il percorso)
-            site_file=$(basename "$site_config")
+# Aggiungi la definizione FS METHOD
+echo "define('FS_METHOD', 'direct');" >> "$file_path"
+echo "Definizione per fs method aggiunta al file."
+echo
 
-            # Disabilita il sito se è un collegamento simbolico e il file corrispondente esiste nella directory dei siti disponibili
-            if [ -L "$site_config" ] && [ -f "$sites_available_dir/$site_file" ]; then
-                sudo a2dissite "$site_file"
-                echo "Sito disabilitato: $site_file"
-            fi
-        done
+# Percorso dei file di configurazione dei siti abilitati
+sites_available_dir="/etc/apache2/sites-available"
+sites_enabled_dir="/etc/apache2/sites-enabled"
 
-        sudo a2ensite $database_name
-        # Riavvia Apache per applicare le modifiche
-        sudo systemctl restart apache2
+# Verifica se il percorso dei siti abilitati esiste
+if [ ! -d "$sites_enabled_dir" ]; then
+    echo "Directory dei siti abilitati non trovata: $sites_enabled_dir"
+    exit 1
+fi
 
-        sudo a2ensite $database_name
+# Itera su tutti i file nella directory dei siti abilitati
+for site_config in "$sites_enabled_dir"/*; do
+    # Estrai il nome del file (senza il percorso)
+    site_file=$(basename "$site_config")
+    
+    # Disabilita il sito se è un collegamento simbolico e il file corrispondente esiste nella directory dei siti disponibili
+    if [ -L "$site_config" ] && [ -f "$sites_available_dir/$site_file" ]; then
+        sudo a2dissite "$site_file"
+        echo "Sito disabilitato: $site_file"
+    fi
+done
 
-        sudo systemctl restart apache2
+sudo a2ensite $database_name
+# Riavvia Apache per applicare le modifiche
+sudo systemctl restart apache2
 
-        echo
-        echo "ORA PUOI GIOCARE COL TUO NUOVO SITO $database_name, vai su localhost"
+sudo a2ensite $database_name
+
+sudo systemctl restart apache2
+
+
+echo
+echo "ORA PUOI GIOCARE COL TUO NUOVO SITO $database_name, vai su localhost"
 
     else
         echo "Errore durante la creazione dell'utente WordPress o l'assegnazione dei privilegi."
         # Connessione al server MySQL e distruzione del database
-        echo "Connessione a MySQL e distruzione del database..."
-        output=$(echo "DROP DATABASE $database_name;" | mysql -u "$username" -p"$password" 2>&1)
-        echo "Errore. sito non creato. Riprova. Forse è la password scarsa o username che non va bene"
+            echo "Connessione a MySQL e distruzione del database..."
+            output=$(echo "DROP DATABASE $database_name;" | mysql -u "$username" -p"$password" 2>&1)
+            echo "Errore. sito non creato. Riprova. Forse è la password scarsa"
     fi
 fi
